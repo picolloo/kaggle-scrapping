@@ -1,0 +1,13 @@
+{
+  "name": "mod-script",
+  "version": "1.0.0",
+  "main": "src/index.js",
+  "author": "picolloo <lucaspicolloo@gmail.com>",
+  "license": "MIT",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "puppeteer": "^10.1.0"
+  }
+}
