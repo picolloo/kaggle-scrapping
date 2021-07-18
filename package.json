@@ -8,6 +8,9 @@
     "start": "node src/index.js"
   },
   "dependencies": {
+    "convert-array-to-csv": "^2.0.0",
+    "minimist": "^1.2.5",
+    "parameterize-string": "^1.0.1",
     "puppeteer": "^10.1.0",
     "puppeteer-element2selector": "^0.0.3"
   }
