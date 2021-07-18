@@ -7,14 +7,25 @@ const fs = require('fs');
 const {algo, problem: problem_type, target : target_type} = require('minimist')(process.argv.slice(2));
 
 (async () => {
-  const browser = await puppeteer.launch()
+  const browser = await puppeteer.launch({
+    headless: false
+  })
   const [page] = await browser.pages()
 
   const encodedAlgo = paramaterize(algo, {separator: '+'})
   await page.goto(`https://www.kaggle.com/search?q=${encodedAlgo}+in%3Adatasets`)
 
-  await page.waitForSelector('div.searchTarget')
+  const data = await handleResultPage(browser, page)
 
+  const csv = convertArrayToCSV(data)
+   fs.writeFileSync(`data/${algo}.csv`, csv)
+
+  await browser.close()
+})()
+
+
+async function handleResultPage(browser, page) {
+  await page.waitForSelector('div.searchTarget')
   const results = await page.$x('//a[descendant::div[contains(@class,"searchTarget")]]')
 
   const parsedData = []
@@ -26,49 +37,37 @@ const {algo, problem: problem_type, target : target_type} = require('minimist')(
     const [,newPage] = await browser.pages()
     await newPage.bringToFront()
 
-    try {
-      const reference = await getDatasetTitle(newPage)
-      const columnTypes = await getColTypes(newPage)
-      const n_features = await getNcols(newPage)
-      const n_rows = await getNrow(newPage)
-
-      console.log({
-       reference,
-        n_rows,
-        n_features,
-        feature_types: [...columnTypes].join(","),
-        target_type,
-        type_of_learning: 'supervised',
-        problem_type,
-        algorithm: algo
-      })
-
-      parsedData.push({
-       reference,
-        n_rows,
-        n_features,
-        feature_types: [...columnTypes].join(","),
-        target_type,
-        type_of_learning: 'supervised',
-        problem_type,
-        algorithm: algo
-      })
-    }
-    catch (e) {
-      console.error(e)
-    }
-
+    const itemData = await handleResultItem(newPage)
+    if (itemData) parsedData.push(itemData)
     await newPage.close()
   }
+  return parsedData
+}
 
-  const csv = convertArrayToCSV(parsedData)
-  console.log({csv})
+async function handleResultItem(page) {
+  try {
+    const reference = await getDatasetTitle(page)
+    const columnTypes = await getColTypes(page)
+    const n_features = await getNcols(page)
+    const n_rows = await getNrow(page)
 
-  fs.writeFileSync(`data/${algo}.csv`, csv)
-
-  await browser.close()
-})()
-
+    const result ={
+      reference,
+      problem_type,
+      n_rows,
+      n_features,
+      target_type,
+      feature_types: [...columnTypes].join(","),
+      type_of_learning: 'supervised',
+      algorithm: algo,
+      URL: await page.url()
+    }
+    return result
+  }
+  catch (e) {
+    console.error(e)
+  }
+}
 
 async function getNcols(page) {
   await page.waitForXPath('//*[@id="site-content"]/div[3]/div[2]/div[3]/div[2]/div/div[2]/div/div[2]/div/div[2]/div/p')
@@ -102,11 +101,11 @@ async function getColTypes(page) {
   return columnTypes
 }
 
-async function getTargetType(page, columnTypes) {
+// async function getTargetType(page, columnTypes) {
   // if (columnTypes.has("continuous") && columnTypes.size === 1) return "continuous"
   // else if (!columnTypes.has("continuous")) return "discrete"
   // TODO: if has 3 types = add 2 rows
-}
+// }
 
 async function getNrow(page) {
   await page.waitForXPath("//button[contains(., 'Column')]")
@@ -115,7 +114,7 @@ async function getNrow(page) {
 
   const [nrowsEl] = await page.$x('//*[@id="site-content"]/div[3]/div[2]/div[3]/div[2]/div/div[2]/div/div[3]/div/div[1]/div[2]/div[2]/div/div[2]/div[2]')
   const nrows = await page.evaluate(name => name.innerText, nrowsEl)
-  return nrows
+  return nrows.replace(/\./,"").replace(/k/, 1000)
 }
 
 async function getDatasetTitle(page) {
