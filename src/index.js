@@ -1,12 +1,13 @@
 const puppeteer = require('puppeteer');
 const { element2selector } = require('puppeteer-element2selector');
 const paramaterize = require('parameterize-string')
+const { convertArrayToCSV } = require('convert-array-to-csv');
+const fs = require('fs');
+
 const {algo, problem: problem_type, target : target_type} = require('minimist')(process.argv.slice(2));
 
 (async () => {
-  const browser = await puppeteer.launch({
-    headless: false
-  })
+  const browser = await puppeteer.launch()
   const [page] = await browser.pages()
 
   const encodedAlgo = paramaterize(algo, {separator: '+'})
@@ -60,10 +61,10 @@ const {algo, problem: problem_type, target : target_type} = require('minimist')(
     await newPage.close()
   }
 
-  await results[8].click()
+  const csv = convertArrayToCSV(parsedData)
+  console.log({csv})
 
-  await page.waitForXPath('/html/body/main/div[1]/div/div[5]/div[3]/div[2]/div[3]/div[2]/div/div[2]/div/div[3]/div[6]/div/div')
-  const columns = await page.$x('/html/body/main/div[1]/div/div[5]/div[3]/div[2]/div[3]/div[2]/div/div[2]/div/div[3]/div[6]/div/div')
+  fs.writeFileSync(`data/${algo}.csv`, csv)
 
   await browser.close()
 })()
