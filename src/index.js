@@ -13,19 +13,27 @@ const {algo, problem: problem_type, target : target_type} = require('minimist')(
   const [page] = await browser.pages()
 
   const encodedAlgo = paramaterize(algo, {separator: '+'})
-  await page.goto(`https://www.kaggle.com/search?q=${encodedAlgo}+in%3Adatasets`)
+  await page.goto(`https://www.kaggle.com/search?q=${encodedAlgo}+in%3Adatasets+datasetFileTypes%3Acsv`)
 
-  const data = await handleResultPage(browser, page)
+  await page.waitForXPath('//*[@id="root"]/div/div[1]/div[2]/div/div/div[2]/div[2]/div[3]/div/span/span')
+  const searchPages = await page.$x('//*[@id="root"]/div/div[1]/div[2]/div/div/div[2]/div[2]/div[3]/div/span/span')
 
-  const csv = convertArrayToCSV(data)
-   fs.writeFileSync(`data/${algo}.csv`, csv)
+  let modelData = []
+  for (let searchPage of searchPages) {
+    await searchPage.click()
+    const data = await handleResultPage(browser, page)
+    modelData = [...modelData, ...data]
+  }
+
+  const csv = convertArrayToCSV(modelData)
+  fs.writeFileSync(`data/${algo}.csv`, csv)
 
   await browser.close()
 })()
 
-
 async function handleResultPage(browser, page) {
-  await page.waitForSelector('div.searchTarget')
+  await page.waitForSelector('aaaaaaaaaa', { timeout: 2500 }).catch(()=> {})
+  await page.waitForXPath('//a[descendant::div[contains(@class,"searchTarget")]]')
   const results = await page.$x('//a[descendant::div[contains(@class,"searchTarget")]]')
 
   const parsedData = []
@@ -35,38 +43,41 @@ async function handleResultPage(browser, page) {
     })
 
     const [,newPage] = await browser.pages()
+
     await newPage.bringToFront()
 
-    const itemData = await handleResultItem(newPage)
-    if (itemData) parsedData.push(itemData)
-    await newPage.close()
+    const URL =  await newPage.url()
+    try {
+      const itemData = await handleResultItem(newPage)
+      if (itemData) parsedData.push(itemData)
+    }
+    catch (e) {
+      console.error(URL, e.message())
+    }
+    finally {
+      await newPage.close()
+    }
   }
   return parsedData
 }
 
 async function handleResultItem(page) {
-  try {
-    const reference = await getDatasetTitle(page)
-    const columnTypes = await getColTypes(page)
-    const n_features = await getNcols(page)
-    const n_rows = await getNrow(page)
+  const reference = await getDatasetTitle(page)
+  const columnTypes = await getColTypes(page)
+  const n_features = await getNcols(page)
+  const n_rows = await getNrow(page)
 
-    const result ={
-      reference,
-      problem_type,
-      n_rows,
-      n_features,
-      target_type,
-      feature_types: [...columnTypes].join(","),
-      type_of_learning: 'supervised',
-      algorithm: algo,
-      URL: await page.url()
-    }
-    return result
+  const result ={
+    reference,
+    problem_type,
+    n_rows,
+    n_features,
+    target_type,
+    feature_types: [...columnTypes].join(","),
+    type_of_learning: 'supervised',
+    algorithm: algo
   }
-  catch (e) {
-    console.error(e)
-  }
+  return result
 }
 
 async function getNcols(page) {
@@ -80,7 +91,7 @@ async function getColTypes(page) {
   let colDiv = 6
   await page.waitForXPath(
     `//*[@id="site-content"]/div[3]/div[2]/div[3]/div[2]/div/div[2]/div/div[3]/div[${colDiv}]/div/div`, {
-      timeout: 10000
+      timeout: 5000
     }
   ).catch(() => (colDiv = 5))
   const columns = await page.$x(`//*[@id="site-content"]/div[3]/div[2]/div[3]/div[2]/div/div[2]/div/div[3]/div[${colDiv}]/div/div`)
@@ -105,7 +116,7 @@ async function getColTypes(page) {
   // if (columnTypes.has("continuous") && columnTypes.size === 1) return "continuous"
   // else if (!columnTypes.has("continuous")) return "discrete"
   // TODO: if has 3 types = add 2 rows
-// }
+  // }
 
 async function getNrow(page) {
   await page.waitForXPath("//button[contains(., 'Column')]")
