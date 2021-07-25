@@ -6,6 +6,8 @@ const fs = require('fs');
 
 const {algo, problem: problem_type, target : target_type} = require('minimist')(process.argv.slice(2));
 
+let errors = {};
+
 (async () => {
   const browser = await puppeteer.launch({
     headless: false
@@ -20,11 +22,16 @@ const {algo, problem: problem_type, target : target_type} = require('minimist')(
 
   let modelData = []
   for (let searchPage of searchPages) {
-    await searchPage.click()
-    const data = await handleResultPage(browser, page)
-    modelData = [...modelData, ...data]
+    try {
+      await searchPage.click()
+      const data = await handleResultPage(browser, page)
+      modelData = [...modelData, ...data]
+    } catch (e) {
+      console.error(e)
+    }
   }
 
+  console.log({errors, modelData})
   const csv = convertArrayToCSV(modelData)
   fs.writeFileSync(`data/${algo}.csv`, csv)
 
@@ -32,7 +39,7 @@ const {algo, problem: problem_type, target : target_type} = require('minimist')(
 })()
 
 async function handleResultPage(browser, page) {
-  await page.waitForSelector('aaaaaaaaaa', { timeout: 2500 }).catch(()=> {})
+  await sleep(page, 2500)
   await page.waitForXPath('//a[descendant::div[contains(@class,"searchTarget")]]')
   const results = await page.$x('//a[descendant::div[contains(@class,"searchTarget")]]')
 
@@ -45,14 +52,19 @@ async function handleResultPage(browser, page) {
     const [,newPage] = await browser.pages()
 
     await newPage.bringToFront()
+    await sleep(page, 1500)
 
-    const URL =  await newPage.url()
+    const url =  await newPage.url()
     try {
-      const itemData = await handleResultItem(newPage)
+      let itemData = await handleResultItem(newPage)
+      itemData = {...itemData, url}
       if (itemData) parsedData.push(itemData)
+
+      console.log(itemData)
     }
     catch (e) {
-      console.error(URL, e.message())
+      errors[e.message] = errors[e.message] ?  [...errors[e.message], url] : [url]
+      console.error(e.message)
     }
     finally {
       await newPage.close()
@@ -80,6 +92,11 @@ async function handleResultItem(page) {
   return result
 }
 
+
+async function sleep(page, time) {
+  await page.waitForSelector('aaaaaaaaaa', { timeout: time }).catch(()=> {})
+}
+
 async function getNcols(page) {
   await page.waitForXPath('//*[@id="site-content"]/div[3]/div[2]/div[3]/div[2]/div/div[2]/div/div[2]/div/div[2]/div/p')
   const [nColsEl] = await page.$x('//*[@id="site-content"]/div[3]/div[2]/div[3]/div[2]/div/div[2]/div/div[2]/div/div[2]/div/p')
@@ -88,6 +105,8 @@ async function getNcols(page) {
 }
 
 async function getColTypes(page) {
+  page.evaluate(_ => window.scrollBy(0, document.body.scrollHeight))
+
   let colDiv = 6
   await page.waitForXPath(
     `//*[@id="site-content"]/div[3]/div[2]/div[3]/div[2]/div/div[2]/div/div[3]/div[${colDiv}]/div/div`, {
@@ -125,7 +144,7 @@ async function getNrow(page) {
 
   const [nrowsEl] = await page.$x('//*[@id="site-content"]/div[3]/div[2]/div[3]/div[2]/div/div[2]/div/div[3]/div/div[1]/div[2]/div[2]/div/div[2]/div[2]')
   const nrows = await page.evaluate(name => name.innerText, nrowsEl)
-  return nrows.replace(/\./,"").replace(/k/, 1000)
+  return nrows.replace(/\./,"").replace(/k/, 000).replace(/m/, 000000)
 }
 
 async function getDatasetTitle(page) {
@@ -134,3 +153,5 @@ async function getDatasetTitle(page) {
   const title = await page.evaluate(el => el.textContent, titleElement)
   return title
 }
+
+
