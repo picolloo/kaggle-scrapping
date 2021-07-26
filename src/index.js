@@ -4,14 +4,12 @@ const paramaterize = require('parameterize-string')
 const { convertArrayToCSV } = require('convert-array-to-csv');
 const fs = require('fs');
 
-const {algo, problem: problem_type, target : target_type} = require('minimist')(process.argv.slice(2));
+const {algo, problem: problem_type} = require('minimist')(process.argv.slice(2));
 
 let errors = {};
 
 (async () => {
-  const browser = await puppeteer.launch({
-    headless: false
-  })
+  const browser = await puppeteer.launch()
   const [page] = await browser.pages()
 
   const encodedAlgo = paramaterize(algo, {separator: '+'})
@@ -24,6 +22,7 @@ let errors = {};
   for (let searchPage of searchPages) {
     try {
       await searchPage.click()
+      await sleep(page, 2500)
       const data = await handleResultPage(browser, page)
       modelData = [...modelData, ...data]
     } catch (e) {
@@ -31,15 +30,14 @@ let errors = {};
     }
   }
 
-  console.log({errors, modelData})
+  console.log(errors)
   const csv = convertArrayToCSV(modelData)
-  fs.writeFileSync(`data/${algo}.csv`, csv)
+  fs.writeFileSync(`data/${algo}-${problem_type}.csv`, csv)
 
   await browser.close()
 })()
 
 async function handleResultPage(browser, page) {
-  await sleep(page, 2500)
   await page.waitForXPath('//a[descendant::div[contains(@class,"searchTarget")]]')
   const results = await page.$x('//a[descendant::div[contains(@class,"searchTarget")]]')
 
@@ -49,10 +47,10 @@ async function handleResultPage(browser, page) {
       button: "middle"
     })
 
+    await sleep(page, 1000)
     const [,newPage] = await browser.pages()
-
     await newPage.bringToFront()
-    await sleep(page, 1500)
+    await sleep(page, 2000)
 
     const url =  await newPage.url()
     try {
@@ -78,10 +76,11 @@ async function handleResultItem(page) {
   const columnTypes = await getColTypes(page)
   const n_features = await getNcols(page)
   const n_rows = await getNrow(page)
+  const target_type = getTargetType(columnTypes)
 
   const result ={
     reference,
-    problem_type,
+    problem_type: target_type === 'discrete' ? 'classification' : 'regression',
     n_rows,
     n_features,
     target_type,
@@ -100,6 +99,7 @@ async function sleep(page, time) {
 async function getNcols(page) {
   await page.waitForXPath('//*[@id="site-content"]/div[3]/div[2]/div[3]/div[2]/div/div[2]/div/div[2]/div/div[2]/div/p')
   const [nColsEl] = await page.$x('//*[@id="site-content"]/div[3]/div[2]/div[3]/div[2]/div/div[2]/div/div[2]/div/div[2]/div/p')
+  if (!nColsEl) throw Error("Ncols: innerText")
   const ncols = await page.evaluate(name => name.innerText.split(' ')[2], nColsEl)
   return ncols
 }
@@ -107,12 +107,12 @@ async function getNcols(page) {
 async function getColTypes(page) {
   page.evaluate(_ => window.scrollBy(0, document.body.scrollHeight))
 
-  let colDiv = 6
+  let colDiv = 5
   await page.waitForXPath(
     `//*[@id="site-content"]/div[3]/div[2]/div[3]/div[2]/div/div[2]/div/div[3]/div[${colDiv}]/div/div`, {
       timeout: 5000
     }
-  ).catch(() => (colDiv = 5))
+  ).catch(() => (colDiv = 6))
   const columns = await page.$x(`//*[@id="site-content"]/div[3]/div[2]/div[3]/div[2]/div/div[2]/div/div[3]/div[${colDiv}]/div/div`)
 
   if (columns.length == 0) throw new Error("Unable to read columns")
@@ -131,18 +131,24 @@ async function getColTypes(page) {
   return columnTypes
 }
 
-// async function getTargetType(page, columnTypes) {
-  // if (columnTypes.has("continuous") && columnTypes.size === 1) return "continuous"
-  // else if (!columnTypes.has("continuous")) return "discrete"
-  // TODO: if has 3 types = add 2 rows
-  // }
+function getTargetType(columnTypes) {
+  if ((columnTypes.has("continuous") && columnTypes.size === 1) || problem_type === 'regression') {
+    return "continuous"
+  }
+  if (!columnTypes.has("continuous") || problem_type === 'classification') return "discrete"
+}
 
 async function getNrow(page) {
   await page.waitForXPath("//button[contains(., 'Column')]")
   const [columnsTab] = await page.$x("//button[contains(., 'Column')]")
   await columnsTab.click()
 
+  await page.waitForXPath('//*[@id="site-content"]/div[3]/div[2]/div[3]/div[2]/div/div[2]/div/div[3]/div/div[1]/div[2]/div[2]/div/div[2]/div[2]', {
+    timeout: 4000
+  })
   const [nrowsEl] = await page.$x('//*[@id="site-content"]/div[3]/div[2]/div[3]/div[2]/div/div[2]/div/div[3]/div/div[1]/div[2]/div[2]/div/div[2]/div[2]')
+
+  if (!nrowsEl) throw Error("Nrow: innerText")
   const nrows = await page.evaluate(name => name.innerText, nrowsEl)
   return nrows.replace(/\./,"").replace(/k/, 000).replace(/m/, 000000)
 }
@@ -153,5 +159,4 @@ async function getDatasetTitle(page) {
   const title = await page.evaluate(el => el.textContent, titleElement)
   return title
 }
-
 
